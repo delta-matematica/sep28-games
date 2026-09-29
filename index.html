@@ -46,6 +46,9 @@ button{cursor:pointer;border:0;background:none}
 .mark{display:inline-flex;align-items:center;gap:.5em}
 .mark svg{width:1.1em;height:1.1em;fill:var(--gold)}
 .word{font-family:'Archivo',sans-serif;font-weight:900;line-height:.92}
+.word .by{display:block;font-family:'IBM Plex Sans',sans-serif;font-weight:500;color:rgba(255,255,255,.78);font-size:.3em;margin-top:.35em;letter-spacing:.01em}
+.hbar .bt{display:flex;flex-direction:column;line-height:1.05}
+.hbar .bt small{font-family:'IBM Plex Sans',sans-serif;font-weight:500;font-size:.62em;color:var(--muted);margin-top:3px}
 .word small{display:block;font-weight:600;font-family:'IBM Plex Sans',sans-serif;color:var(--gold);letter-spacing:.02em}
 
 .mode{font-size:.85rem;background:rgba(201,162,39,.14);border:1px solid rgba(201,162,39,.4);color:var(--gold2);
@@ -57,6 +60,7 @@ button{cursor:pointer;border:0;background:none}
 .join-card{position:relative;width:100%;max-width:400px;display:flex;flex-direction:column;gap:18px}
 .join-card .word{font-size:clamp(2.6rem,11vw,3.4rem)}
 .join-card .word small{font-size:1rem;margin-top:.35em}
+.join-card .word .by{font-size:1.15rem;margin-top:.3em}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label{font-weight:600;font-size:.95rem}
 .field input,.field select,.field textarea{background:#fff;color:var(--navy);border:2px solid transparent;border-radius:12px;padding:.8em .9em;font-size:1.1rem;width:100%}
@@ -148,6 +152,12 @@ button{cursor:pointer;border:0;background:none}
 .qtext{background:var(--paper);color:var(--navy);border-radius:20px;padding:clamp(20px,3vw,40px);
   font-size:clamp(1.5rem,3.4vw,3rem);font-weight:600;line-height:1.3}
 .qtext .katex{font-size:1.08em}
+.qtext{font-size:clamp(1.25rem,2.6vw,2.3rem)}
+.qfig{margin-top:.6em;display:flex;justify-content:center}
+.qfig svg{height:clamp(120px,26vh,260px);width:auto;max-width:100%}
+.qfig svg.strip{height:auto;width:min(100%,780px)}
+.pq-text .qfig svg{height:140px}
+.pq-text .qfig svg.strip{height:auto;width:100%}
 .timer{position:relative;width:clamp(120px,15vw,210px);aspect-ratio:120/108}
 .timer svg{width:100%;height:100%;overflow:visible}
 .timer .bg{fill:none;stroke:var(--line);stroke-width:9;stroke-linejoin:round}
@@ -234,6 +244,7 @@ const CONFIG = {
   SUPABASE_URL: 'https://fpqmmpjcreofyujkfrda.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_PvlttSZZTobD3qcfb8-s8Q_elIOLyn0'
 };
+const TEACHER = 'Mr. Ramos';   // nombre del profesor que aparece bajo "Reto Delta"
 const LOCAL = !(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
 
 /* ---------------- Data layer (same interface for Supabase and local test) ---------------- */
@@ -310,88 +321,479 @@ const CHECK='<svg class="ok" viewBox="0 0 24 24" aria-label="Correcta"><path d="
 const fmtPts=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
 
 /*GEN-START*/
-/* ---------------- Question generators (fresh set every game) ---------------- */
+/* ---------------- Utilidades ---------------- */
 const R=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
 const gcd=(a,b)=>{a=Math.abs(a);b=Math.abs(b);while(b){[a,b]=[b,a%b];}return a||1;};
-const N=n=>{const s=String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g,'\\,');return (n<0?'-':'')+s;};
-const P=n=>n<0?`(${N(n)})`:N(n);
+const lcm=(a,b)=>a/gcd(a,b)*b;
 const M=s=>`\\(${s}\\)`;
-function build(text,correct,distractors,meta){
+const NB='\u00A0';
+const sep=s=>s.replace(/\B(?=(\d{3})+(?!\d))/g,NB);
+const fmt=n=>(n<0?'-':'')+sep(String(Math.abs(n)));            // 1 080
+const money=n=>'$'+fmt(n);                                         // $7 700
+const tnum=n=>(n<0?'-':'')+String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g,'\\,'); // TeX 1\,000
+const SC=1000000;                                                  // decimales como enteros ×10^6
+const dstr=v=>{const neg=v<0;v=Math.abs(v);const ip=Math.floor(v/SC);const fp=String(v%SC).padStart(6,'0').replace(/0+$/,'');return (neg?'-':'')+sep(String(ip))+(fp?','+fp:'');};
+const dtex=v=>dstr(v).replace(/,/g,'{,}').split(NB).join('\\,');
+const D=(x,dp)=>Math.round(x*SC);                                  // helper para literales
+const pct=v=>(Number.isInteger(v)?fmt(v):String(v).replace('.',','))+'%';
+const WORD=['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+const cap=s=>s[0].toUpperCase()+s.slice(1);
+const art=w=>/^[aeiou]/i.test(w)?'an':'a';
+const frac=(n,d)=>`\\frac{${n}}{${d}}`;
+const mixed=(w,n,d)=>`${w}\\tfrac{${n}}{${d}}`;
+const ratio=(a,b)=>M(`${a} : ${b}`);
+
+/* Contextos: evitar repetir dentro del mismo juego */
+const USED=new Set();
+function fresh(pool,tag){const av=pool.filter((_,i)=>!USED.has(tag+i));const src=av.length?av:pool;const it=pick(src);USED.add(tag+pool.indexOf(it));return it;}
+const NAMES=[['Martina','f'],['Diego','m'],['Sofía','f'],['Tomás','m'],['Camila','f'],['José','m'],['Valentina','f'],['Benjamín','m'],['Isidora','f'],['Matías','m'],['Florencia','f'],['Vicente','m'],['Catalina','f'],['Agustín','m'],['Josefa','f'],['Joaquín','m'],['Antonella','f'],['Cristóbal','m'],['Trinidad','f'],['Bastián','m'],['Elena','f'],['Lucas','m'],['Amanda','f'],['Maximiliano','m']];
+function who(){const [n,g]=fresh(NAMES,'nm');const f=g==='f';return {n,he:f?'she':'he',He:f?'She':'He',his:f?'her':'his',him:f?'her':'him'};}
+
+/* Opciones */
+const opt=(key,disp)=>({key:String(key),disp});
+function mc(text,correct,wrongs,meta,fig){
   if(!correct) return null;
-  const seen=new Set([correct.key]); const opts=[correct];
-  for(const d of distractors){ if(d&&!seen.has(d.key)){seen.add(d.key);opts.push(d);} if(opts.length===4)break; }
+  const seen=new Set([correct.key]),opts=[correct];
+  for(const w of wrongs){ if(w&&!seen.has(w.key)){seen.add(w.key);opts.push(w);} if(opts.length===4)break; }
   if(opts.length<4) return null;
   shuffle(opts);
-  return {text,choices:opts.map(o=>M(o.tex)),correct:opts.indexOf(correct),meta};
+  const q={text,choices:opts.map(o=>o.disp),correct:opts.indexOf(correct),meta};
+  if(fig) q.fig=fig;
+  return q;
 }
-const num=(v,suf='')=>Number.isInteger(v)?{key:String(v),tex:N(v)+suf}:null;
-const near=(ans,list)=>{const o=[...list];for(let k=1;k<=6;k++)o.push(ans+k,ans-k);return o;};
+function nums(ans,list,f,step=1,ok=v=>v>0){
+  const out=[...list]; for(const k of shuffle([1,2,3,4,5,-1,-2,-3,-4,-5])) out.push(ans+k*step);
+  return out.filter(v=>Number.isInteger(v)&&ok(v)&&v!==ans).map(v=>opt(v,f(v)));
+}
+const frOpt=(n,d,unit='')=>{const g=gcd(n,d);return opt((n/g)+'/'+(d/g),M(d/g===1?String(n/g):frac(n/g,d/g))+unit);};
 
+/* =====================================================================
+   1. NUMBERS
+   ===================================================================== */
+const STORES=[
+  {at:'at a bookstore',items:[['notebook','notebooks',1200,2500],['pencil','pencils',250,600],['eraser','erasers',300,700],['ruler','rulers',500,1200],['pen','pens',400,900],['folder','folders',700,1500]]},
+  {at:'at the school kiosk',items:[['sandwich','sandwiches',1500,2800],['juice box','juice boxes',500,1000],['fruit cup','fruit cups',700,1300],['yogurt','yogurts',500,900],['cookie','cookies',200,500]]},
+  {at:'at a sports shop',items:[['tennis ball','tennis balls',800,1800],['water bottle','water bottles',2000,4500],['pair of socks','pairs of socks',1500,3000],['headband','headbands',1200,2500]]},
+  {at:'at the feria',items:[['avocado','avocados',400,900],['pineapple','pineapples',1500,2500],['melon','melons',1200,2200],['bag of lemons','bags of lemons',800,1500]]},
+  {at:'at a toy store',items:[['yo-yo','yo-yos',1500,3000],['puzzle','puzzles',4500,8000],['sticker pack','sticker packs',600,1200],['bag of marbles','bags of marbles',900,1800]]},
+  {at:'at a bakery',items:[['croissant','croissants',600,1200],['empanada','empanadas',1500,2800],['slice of cake','slices of cake',1800,3000],['bag of marraquetas','bags of marraquetas',1000,2000]]},
+  {at:'at a craft store',items:[['paintbrush','paintbrushes',700,1500],['glue stick','glue sticks',500,900],['sheet of cardboard','sheets of cardboard',300,700],['box of crayons','boxes of crayons',1800,3200]]},
+  {at:'at the cinema snack bar',items:[['popcorn','popcorns',2500,4000],['soda','sodas',1500,2500],['candy bar','candy bars',900,1600],['nacho tray','nacho trays',3000,4500]]},
+  {at:'at a pharmacy',items:[['toothbrush','toothbrushes',1200,2500],['pack of tissues','packs of tissues',500,1000],['sunscreen','sunscreens',5000,9000],['lip balm','lip balms',1500,2800]]}
+];
+const price=it=>R(it[2]/50,it[3]/50)*50;
+const NUM={
+  total(){
+    const st=fresh(STORES,'st'), it=shuffle([...st.items]).slice(0,3), p=it.map(price), q=[R(2,5),R(2,6),R(2,4)], w=who();
+    const T=q[0]*p[0]+q[1]*p[1]+q[2]*p[2];
+    const text=`${w.n} is ${st.at}. ${cap(art(it[0][0]))} ${it[0][0]} costs ${money(p[0])}, ${art(it[1][0])} ${it[1][0]} costs ${money(p[1])} and ${art(it[2][0])} ${it[2][0]} costs ${money(p[2])}. ${w.He} buys ${q[0]} ${it[0][1]}, ${q[1]} ${it[1][1]} and ${q[2]} ${it[2][1]}. How much does ${w.he} pay in total?`;
+    return mc(text,opt(T,money(T)),nums(T,[q[0]*p[0]+q[1]*p[1]+p[2],p[0]+p[1]+p[2],T-p[1],T+p[0],T-1000,T+1000],money,100),{t:'total',p,q});
+  },
+  change(){
+    const st=fresh(STORES,'st'), it=shuffle([...st.items]).slice(0,2), p=it.map(price), q=[R(2,4),R(2,4)], w=who();
+    const T=q[0]*p[0]+q[1]*p[1]; const bill=[5000,10000,20000].find(b=>b>=T+500); if(!bill) return null;
+    const C=bill-T;
+    const text=`${w.n} buys ${q[0]} ${it[0][1]} and ${q[1]} ${it[1][1]} ${st.at}. Each ${it[0][0]} costs ${money(p[0])} and each ${it[1][0]} costs ${money(p[1])}. ${w.He} pays with a ${money(bill)} bill. How much change does ${w.he} receive?`;
+    return mc(text,opt(C,money(C)),nums(C,[T,bill-(p[0]+p[1]),C+p[1],C-p[0],C+1000],money,100),{t:'change',p,q,bill});
+  },
+  chain(){
+    const T=fresh([
+      [[4,12],[5,20],[3,15],'pencils',(a,b,c)=>`A packet contains ${a} pencils. Each box contains ${b} packets. How many pencils are there in ${c} boxes?`],
+      [[30,30],[6,12],[4,15],'eggs',(a,b,c)=>`A tray holds ${a} eggs and a crate holds ${b} trays. A farm in Limache sends ${c} crates to the market. How many eggs does it send?`],
+      [[20,40],[4,8],[3,12],'books',(a,b,c)=>`Each shelf in the school library holds ${a} books, and each bookcase has ${b} shelves. The library has ${c} full bookcases. How many books are there?`],
+      [[12,30],[8,25],[4,12],'seats',(a,b,c)=>`A section of the stadium has ${b} rows with ${a} seats in each row. How many seats are there in ${c} identical sections?`],
+      [[6,15],[5,10],[3,9],'stickers',(a,b,c,w)=>`A sheet has ${a} stickers and each album pack contains ${b} sheets. ${w.n} buys ${c} packs. How many stickers does ${w.he} get?`],
+      [[12,24],[6,15],[3,10],'seedlings',(a,b,c)=>`A greenhouse tray holds ${a} seedlings. Each rack holds ${b} trays, and the greenhouse has ${c} racks. How many seedlings are in the greenhouse?`],
+      [[24,24],[20,40],[3,8],'juice boxes',(a,b,c)=>`A carton holds ${a} juice boxes. A delivery truck carries ${b} cartons per trip. How many juice boxes does it deliver in ${c} trips?`],
+      [[8,16],[10,25],[4,12],'crayons',(a,b,c)=>`A box has ${a} crayons. A school orders ${b} boxes for each classroom. How many crayons does it need for ${c} classrooms?`]
+    ],'ch');
+    const a=R(...T[0]),b=R(...T[1]),c=R(...T[2]),A=a*b*c,u=` ${T[3]}`;
+    return mc(T[4](a,b,c,who()),opt(A,fmt(A)+u),nums(A,[a*b,a*b+c,A+a*b,a*(b+c),A-a*b,a*b*c+a*c],v=>fmt(v)+u,10),{t:'chain',a,b,c});
+  },
+  order(){
+    const f=R(1,6); let tex,ans,wrong=[];
+    if(f===1){const a=R(10,60),b=R(3,9),c=R(4,15);tex=`${a} + ${b} \\cdot ${c}`;ans=a+b*c;wrong=[(a+b)*c,a+b+c,a*b+c];}
+    else if(f===2){const b=R(3,9),c=R(3,9),a=b*c+R(5,60);tex=`${a} - ${b} \\cdot ${c}`;ans=a-b*c;wrong=[(a-b)*c,a-b-c,a-b+c];}
+    else if(f===3){const a=R(3,9),b=R(3,12),c=R(3,9),d=R(2,9);tex=`${a} \\cdot ${b} + ${c} \\cdot ${d}`;ans=a*b+c*d;wrong=[(a*b+c)*d,a*(b+c)*d,a+b+c+d];}
+    else if(f===4){const c=R(2,9),b=c*R(2,12),a=R(5,50);tex=`${a} + ${b} : ${c}`;ans=a+b/c;wrong=[(a+b)/c,a+b-c,a+b*c];}
+    else if(f===5){const a=R(2,12),b=R(2,12),c=R(3,8),d=R(2,20);tex=`(${a} + ${b}) \\cdot ${c} - ${d}`;ans=(a+b)*c-d;wrong=[a+b*c-d,(a+b)*(c-d),(a+b)*c+d];}
+    else {const d=R(2,6),c=d*R(2,9),a=R(4,12),b=R(4,12);tex=`${a} \\cdot ${b} - ${c} : ${d}`;ans=a*b-c/d;wrong=[(a*b-c)/d,a*b-c-d,a*(b-c/d)];}
+    return mc(`Evaluate ${M(tex)}`,opt(ans,fmt(ans)),nums(ans,wrong,fmt,2,v=>v>0),{t:'order',tex});
+  },
+  expr(){
+    const a=R(3,9),b=R(5,15),c=R(2,b-1),w=who();
+    const T=fresh([
+      [1,`A teacher buys ${a} packs of markers with ${b} markers in each pack, then gives away ${c} markers. Which expression shows how many markers the teacher has left?`],
+      [1,`${w.n} bakes ${a} trays of cookies with ${b} cookies on each tray. ${w.He} gives ${c} cookies to ${w.his} neighbors. Which expression shows how many cookies are left?`],
+      [1,`A theater has ${a} rows with ${b} seats in each row. ${c} seats are broken. Which expression shows how many seats can be used?`],
+      [1,`A farmer plants ${a} rows of lettuce with ${b} plants in each row. Rabbits eat ${c} plants. Which expression shows how many plants remain?`],
+      [1,`A coach buys ${a} nets with ${b} balls in each net. During practice, ${c} balls are lost. Which expression shows how many balls the coach still has?`],
+      [2,`${w.n} has ${c} stamps. ${w.He} buys ${a} packs with ${b} stamps in each pack. Which expression shows how many stamps ${w.he} has now?`],
+      [2,`A library has ${c} books. It receives ${a} boxes with ${b} books in each box. Which expression shows the total number of books?`],
+      [2,`A bus already has ${c} passengers. At the next stop, ${a} groups of ${b} tourists get on. Which expression shows how many passengers are on the bus now?`],
+      [2,`A mural has ${c} painted tiles. The art club adds ${a} rows with ${b} tiles in each row. Which expression shows how many painted tiles there are now?`]
+    ],'ex');
+    let C,W;
+    if(T[0]===1){ if(a+b*c===a*b-c) return null; C=`${a} \\cdot ${b} - ${c}`; W=[`${a} + ${b} - ${c}`,`${a} \\cdot (${b} - ${c})`,`${a} + ${b} \\cdot ${c}`]; }
+    else { C=`${c} + ${a} \\cdot ${b}`; W=[`(${c} + ${a}) \\cdot ${b}`,`${c} + ${a} + ${b}`,`${c} \\cdot ${a} + ${b}`]; if(c*a+b===c+a*b) return null; }
+    return mc(T[1],opt(C,M(C)),W.map(x=>opt(x,M(x))),{t:'expr',kind:T[0],a,b,c});
+  }
+};
+
+/* =====================================================================
+   2. RATIO AND PROPORTION
+   ===================================================================== */
+function coprime(max){let p,q;do{p=R(1,max);q=R(1,max);}while(p===q||gcd(p,q)!==1);return [p,q];}
+const rOpt=(a,b)=>{const g=gcd(a,b);return opt((a/g)+':'+(b/g),ratio(a/g,b/g));};
+const rRaw=(a,b)=>opt(a+':'+b+'raw',ratio(a,b));
+const RAT={
+  partPart(){
+    const C=fresh([['A class has','girls','boys'],['An animal shelter in Antofagasta has','dogs','cats'],['A parking lot has','red cars','white cars'],['A classroom library has','fiction books','non-fiction books'],['A school band has','students who play drums','students who play flute'],['Last month, a weather station recorded','sunny days','cloudy days'],['A fruit stand has','mangoes','papayas']],'pp');
+    const [p,q]=coprime(9),k=R(2,6),a=p*k,b=q*k;
+    const text=`${C[0]} ${a} ${C[1]} and ${b} ${C[2]}. What is the ratio of ${C[1]} to ${C[2]} in simplest form?`;
+    return mc(text,rOpt(a,b),[rOpt(b,a),rOpt(a,a+b),rRaw(a,b),rOpt(b,a+b)],{t:'pp',a,b});
+  },
+  partWhole(){
+    const C=fresh([['A basket contains','red apples','green apples','apples'],['A fish tank has','goldfish','guppies','fish'],['A choir has','sopranos','altos','singers'],['A bag contains','chocolate candies','mint candies','candies'],['A garden has','rose bushes','lily plants','plants'],['A playlist has','cumbia songs','pop songs','songs'],['A drawer has','white socks','black socks','socks']],'pw');
+    const [p,q]=coprime(8),k=R(2,5),a=p*k,b=q*k;
+    const text=`${C[0]} ${a} ${C[1]} and ${b} ${C[2]}. What is the ratio of ${C[1]} to all the ${C[3]} in simplest form?`;
+    return mc(text,rOpt(a,a+b),[rOpt(a,b),rOpt(b,a+b),rOpt(a+b,a),rRaw(a,a+b)],{t:'pw',a,b});
+  },
+  threeParts(){
+    const C=fresh([['A jar contains',['blue','yellow','green'],'marbles'],['A flower shop has',['red','white','pink'],'roses'],['A party has',['orange','purple','silver'],'balloons'],['A mosaic uses',['black','white','gold'],'tiles'],['A bracelet has',['glass','wooden','metal'],'beads'],['A closet has',['striped','plain','printed'],'T-shirts']],'tp');
+    const x=[R(2,12),R(2,12),R(2,12)], i=R(0,2), tot=x[0]+x[1]+x[2], part=x[i];
+    const text=`${C[0]} ${x[0]} ${C[1][0]}, ${x[1]} ${C[1][1]} and ${x[2]} ${C[1][2]} ${C[2]}. What is the ratio of ${C[1][i]} ${C[2]} to the total number of ${C[2]}?`;
+    const o=x[(i+1)%3];
+    return mc(text,rOpt(part,tot),[rOpt(part,tot-part),rOpt(tot,part),rOpt(part,o),rRaw(part,tot),rOpt(o,tot)],{t:'tp',x,i});
+  },
+  scale(){
+    const w=who();
+    const C=fresh([
+      [(p,q,x)=>`The ratio of teachers to students on a field trip is ${ratio(p,q)}. If ${x} teachers go on the trip, how many students go?`,'students',1],
+      [(p,q,x)=>`A pancake recipe uses flour and milk in the ratio ${ratio(p,q)}. If ${w.n} uses ${x} cups of flour, how many cups of milk does ${w.he} need?`,'cups',0],
+      [(p,q,x)=>`To paint a wall, blue and white paint are mixed in the ratio ${ratio(p,q)}. If the painter uses ${x} liters of blue paint, how many liters of white paint are needed?`,'liters',0],
+      [(p,q,x)=>`In a school garden, the ratio of tomato plants to lettuce plants is ${ratio(p,q)}. If there are ${x} tomato plants, how many lettuce plants are there?`,'plants',0],
+      [(p,q,x)=>`At a summer camp, the ratio of adults to children is ${ratio(p,q)}. If ${x} adults are at the camp, how many children are there?`,'children',1],
+      [(p,q,x)=>`A lemonade recipe uses lemons and spoons of sugar in the ratio ${ratio(p,q)}. How many spoons of sugar are needed for ${x} lemons?`,'spoons',0]
+    ],'sc');
+    let p,q; if(C[2]){p=1;q=R(4,12);}else [p,q]=coprime(7);
+    const k=R(2,9),x=p*k,A=q*k,u=` ${C[1]}`;
+    return mc(C[0](p,q,x),opt(A,fmt(A)+u),nums(A,[x+(q-p),A+q,A-q,x*q,A+p],v=>fmt(v)+u,1),{t:'sc',p,q,x});
+  },
+  mixture(){
+    const C=fresh([['A drink is mixed using juice and water','juice','water','cups','drink'],['A concrete mix uses sand and cement','sand','cement','buckets','mix'],['A fruit salad uses strawberries and bananas','strawberries','bananas','cups','fruit salad'],['A shade of green paint is made by mixing yellow and blue paint','yellow','blue','liters','paint'],['A trail mix uses peanuts and raisins','peanuts','raisins','cups','trail mix']],'mx');
+    const [p,q]=coprime(7),k=R(2,6),a=p*k,b=q*k,t=a+b,u=C[3];
+    const text=`${C[0]} in the ratio ${ratio(p,q)}. If you use ${a} ${u} of ${C[1]}, how many ${u} of ${C[2]} do you need? How many ${u} of ${C[4]} will you make in total?`;
+    const pair=(x,y)=>opt(x+'|'+y,`${fmt(x)} ${u} of ${C[2]}; ${fmt(y)} ${u} in total`);
+    const add=a+(q-p);
+    const W=[pair(add,a+add),pair(b,p+q),pair(t,t+a),pair(b,b+q),pair(b+p,t+p)].filter(o=>{const [x,y]=o.key.split('|').map(Number);return x>0&&y>0;});
+    return mc(text,pair(b,t),W,{t:'mx',p,q,a});
+  },
+  unitRate(){
+    const w=who();
+    const C=fresh([
+      [()=>R(6,12)*500,(T,a,b)=>`${w.n} earns ${money(T)} for ${a} hours of work at a café. At the same rate, how much does ${w.he} earn in ${b} hours?`,money],
+      [()=>R(8,18)*5,(T,a,b)=>`A bus travels ${T} km in ${a} hours. At the same speed, how far does it travel in ${b} hours?`,v=>fmt(v)+' km'],
+      [()=>R(8,25),(T,a,b)=>`${w.n} reads ${T} pages in ${a} days. At the same pace, how many pages will ${w.he} read in ${b} days?`,v=>fmt(v)+' pages'],
+      [()=>R(6,15),(T,a,b)=>`A faucet fills ${T} liters of water in ${a} minutes. How many liters does it fill in ${b} minutes?`,v=>fmt(v)+' liters'],
+      [()=>R(12,30),(T,a,b)=>`A printer prints ${T} pages in ${a} minutes. At the same speed, how many pages does it print in ${b} minutes?`,v=>fmt(v)+' pages'],
+      [()=>R(3,9)*100,(T,a,b)=>`A copper mine near Calama moves ${fmt(T)} tons of rock in ${a} hours. At the same rate, how many tons does it move in ${b} hours?`,v=>fmt(v)+' tons']
+    ],'ur');
+    const r=C[0](),a=R(2,5),b=R(6,15),T=r*a,A=r*b;
+    return mc(C[1](T,a,b),opt(A,C[2](A)),nums(A,[T*b,T+(b-a),r*(b-1),r*(b+1),r],C[2],r),{t:'ur',T,a,b});
+  },
+  unitPrice(){
+    const C=fresh([['notebooks',600,1500],['bus tickets',700,900],['movie tickets',3500,5500],['kilos of tomatoes',800,1600],['empanadas',1500,2500],['liters of milk',900,1300],['packs of stickers',500,1200],['kilos of bananas',900,1500]],'up');
+    const r=R(C[1]/50,C[2]/50)*50,a=R(2,6),b=R(7,12),T=r*a,A=r*b;
+    const text=`${cap(WORD[a])} ${C[0]} cost ${money(T)}. At the same price each, how much do ${b} ${C[0]} cost?`;
+    return mc(text,opt(A,money(A)),nums(A,[T*b,T+(b-a)*100,T+r,r*(b-1),r*(b+1)],money,50),{t:'up',T,a,b});
+  }
+};
+
+/* =====================================================================
+   3. DECIMALS  (valores enteros escalados ×10^6)
+   ===================================================================== */
+function randDec(min,max,dp){const s=10**dp;let v;do{v=R(Math.round(min*s),Math.round(max*s));}while(dp>0&&v%10===0);return v*(SC/s);}
+const dpOf=v=>{let d=0;while(d<6&&v%(SC/10**d)!==0)d++;return d;};
+const digitsOf=v=>v/(SC/10**dpOf(v));
+const DEC={
+  add(){
+    const w=who();
+    const C=fresh([
+      ['km',(x,y,z)=>`${w.n} walks ${x} km in the morning, ${y} km in the afternoon and ${z} km in the evening. How many kilometers does ${w.he} walk in total?`,0.3,4],
+      ['kg',(x,y,z)=>`At the feria, ${w.n} buys ${x} kg of tomatoes, ${y} kg of potatoes and ${z} kg of apples. How many kilograms does ${w.he} carry in total?`,0.3,3],
+      ['L',(x,y,z)=>`Three bottles hold ${x} L, ${y} L and ${z} L of water. How many liters do they hold altogether?`,0.2,3],
+      ['m',(x,y,z)=>`A carpenter cuts three boards measuring ${x} m, ${y} m and ${z} m. What is their total length?`,0.4,3],
+      ['km',(x,y,z)=>`A cyclist rides ${x} km on Monday, ${y} km on Wednesday and ${z} km on Friday along the Antofagasta coast. How far does ${w.he} ride in total?`,1,9],
+      ['s',(x,y,z)=>`In a relay race, three runners take ${x} s, ${y} s and ${z} s. What is the team's total time?`,9,15]
+    ],'da');
+    const dps=shuffle([1,2,3]); const v=dps.map(d=>randDec(C[2],C[3],d)); const S=v[0]+v[1]+v[2];
+    const md=3; const mis=v.reduce((s,x)=>s+digitsOf(x)*(SC/10**md),0);
+    const f=x=>dstr(x)+' '+C[0];
+    return mc(C[1](...v.map(dstr)),opt(S,f(S)),[mis,S+SC,S-SC/10,S+SC/10,S+SC/100].filter(x=>x>0&&x!==S).map(x=>opt(x,f(x))),{t:'da',v});
+  },
+  sub(){
+    const w=who();
+    const C=fresh([
+      ['m',(a,b)=>`A ribbon is ${a} m long. ${w.n} cuts off ${b} m. How much ribbon is left?`],
+      ['L',(a,b)=>`A water tank has ${a} L. ${w.n} uses ${b} L to water the plants. How many liters are left?`],
+      ['kg',(a,b)=>`A backpack with a book inside weighs ${a} kg. Without the book it weighs ${b} kg. How much does the book weigh?`],
+      ['m',(a,b)=>`In the long jump, ${w.n} jumps ${a} m and ${w.his} friend jumps ${b} m. How much farther does ${w.n} jump?`],
+      ['km',(a,b)=>`A hiking trail is ${a} km long. After lunch, the group has already walked ${b} km. How many kilometers are left?`],
+      ['kg',(a,b)=>`A box of fruit weighs ${a} kg. After ${w.n} takes out some oranges, it weighs ${b} kg. How many kilograms of oranges did ${w.he} take out?`]
+    ],'ds');
+    let a,b,d1,d2,df;do{[d1,d2]=shuffle([1,2,3]).slice(0,2);a=randDec(3,9,d1);df=randDec(0.2,2.5,d2);b=a-df;}while(b<=SC/2);
+    const A=a-b,md=Math.max(d1,d2),mis=(digitsOf(a)-digitsOf(b))*(SC/10**md);
+    const f=x=>dstr(x)+' '+C[0];
+    return mc(C[1](dstr(a),dstr(b)),opt(A,f(A)),[mis,a+b,A+SC/10,A-SC/10,A+SC,A-SC/100].filter(x=>x>0&&x!==A).map(x=>opt(x,f(x))),{t:'ds',a,b});
+  },
+  mulPow(){
+    const fac=pick([10,100,1000]),dp=R(1,3),v=randDec(0.01,9.9,dp),A=v*fac;
+    const C=fresh([
+      [null,'',()=>`Calculate ${M(dtex(v)+' \\cdot '+tnum(fac))}`],
+      ['g','g',()=>`One grain of rice weighs ${dstr(v)} g. How much do ${fmt(fac)} grains weigh?`],
+      ['mm','mm',()=>`A sheet of paper is ${dstr(v)} mm thick. How thick is a stack of ${fmt(fac)} sheets?`],
+      ['mL','mL',()=>`One drop of water is ${dstr(v)} mL. How many milliliters are in ${fmt(fac)} drops?`],
+      [null,'',()=>`Calculate ${M(tnum(fac)+' \\cdot '+dtex(v))}`]
+    ],'mp');
+    const u=C[1]?' '+C[1]:'', f=x=>dstr(x)+u;
+    const zeros=dstr(v)+String(fac).slice(1);
+    return mc(C[2](),opt(A,f(A)),[opt(A/10,f(A/10)),opt(A*10,f(A*10)),opt('z'+zeros,zeros+u),opt(v*fac/100,f(v*fac/100))],{t:'mp',v,fac});
+  },
+  divPow(){
+    const fac=pick([10,100,1000]),dp=R(0,2),v=randDec(0.1,dp?60:900,dp);
+    if(dp===0&&(v/SC)%fac===0) return null;
+    const A=v/fac; if(!Number.isInteger(A)) return null;
+    const C=fresh([
+      ['',()=>`Calculate ${M(dtex(v)+' : '+tnum(fac))}`],
+      ['kg',()=>`A ${dstr(v)} kg bag of flour is divided equally into ${fmt(fac)} portions for a science fair. How much does each portion weigh?`],
+      ['m',()=>`A roll of ${dstr(v)} m of wire is cut into ${fmt(fac)} equal pieces. How long is each piece?`],
+      ['L',()=>`A tank with ${dstr(v)} L of water is shared equally among ${fmt(fac)} plants. How much water does each plant get?`],
+      ['',()=>`Calculate ${M(dtex(v)+' : '+tnum(fac))}`]
+    ],'dp');
+    const u=C[0]?' '+C[0]:'', f=x=>dstr(x)+u;
+    const W=[v*fac,A*10,A/10,A*100].filter(x=>Number.isInteger(x)&&x>0);
+    return mc(C[1](),opt(A,f(A)),W.map(x=>opt(x,f(x))),{t:'dp',v,fac});
+  },
+  divWhole(){
+    const d=R(2,9),qd=R(1,2),q=randDec(qd===1?0.2:0.11,qd===1?1.5:0.95,qd),v=q*d;
+    const C=fresh([
+      ['',()=>`Calculate ${M(dtex(v)+' : '+d)}`],
+      ['L',()=>`A ${dstr(v)} L bottle of juice is poured equally into ${d} glasses. How much juice goes into each glass?`],
+      ['m',()=>`A ${dstr(v)} m rope is cut into ${d} equal pieces. How long is each piece?`],
+      ['kg',()=>`A ${dstr(v)} kg bag of rice is shared equally among ${d} families. How much rice does each family get?`],
+      ['km',()=>`A ${dstr(v)} km relay course is split equally among ${d} runners. How far does each runner go?`]
+    ],'dw');
+    const u=C[0]?' '+C[0]:'', f=x=>dstr(x)+u;
+    const W=[q*10,q/10,q+SC/100,q+SC/10,q-SC/100].filter(x=>Number.isInteger(x)&&x>0);
+    return mc(C[1](),opt(q,f(q)),W.map(x=>opt(x,f(x))),{t:'dw',v,d});
+  }
+};
+
+/* =====================================================================
+   4. FRACTIONS
+   ===================================================================== */
+const eqv=(a,b,c,d)=>a*d===b*c;
+const FRA={
+  toImproper(){
+    const w=who(),x=R(1,5),d=R(2,9),n=R(1,d-1); if(gcd(n,d)!==1) return null;
+    const m=M(mixed(x,n,d));
+    const C=fresh([
+      `Convert ${m} to an improper fraction.`,
+      `A recipe needs ${m} cups of flour. Write this amount as an improper fraction.`,
+      `${w.n} runs ${m} km every Saturday. Write this distance as an improper fraction.`,
+      `A movie lasts ${m} hours. Write this time as an improper fraction.`,
+      `A plank of wood is ${m} m long. Write its length as an improper fraction.`
+    ],'ti');
+    const N=x*d+n;
+    const raw=(a,b)=>eqv(a,b,N,d)?null:opt(a+'/'+b,M(frac(a,b)));
+    return mc(C,opt(N+'/'+d,M(frac(N,d))),[raw(x+n,d),raw(x*n+d,d),raw(x*d-n,d),raw(N,x*d),raw(x*n,d)],{t:'ti',x,n,d});
+  },
+  toMixed(){
+    const w=who(),d=R(2,9),x=R(1,6),r=R(1,d-1); if(gcd(r,d)!==1) return null;
+    const N=x*d+r,f=M(frac(N,d));
+    const C=fresh([
+      `Convert ${f} to a mixed number.`,
+      `A baker uses ${f} cups of sugar for a cake. Write this amount as a mixed number.`,
+      `At a party, ${f} pizzas were eaten. Write this amount as a mixed number.`,
+      `${w.n} practices piano for ${f} hours in a week. Write this time as a mixed number.`,
+      `A garden bed is ${f} m wide. Write this width as a mixed number.`
+    ],'tm');
+    const mx=(a,b,c)=>opt(a+' '+b+'/'+c,M(mixed(a,b,c)));
+    const W=[x>1?mx(x-1,r+d,d):null,r>1?mx(x,d,r):null,mx(x+1,r,d),mx(r,x,d),r>1?mx(x,r-1,d):mx(x,r+1,d)];
+    return mc(C,mx(x,r,d),W,{t:'tm',N,d});
+  },
+  add(){
+    const w=who(); const Ds=[2,3,4,5,6,8,10,12];
+    let d1,d2,n1,n2; do{d1=pick(Ds);d2=pick(Ds);n1=R(1,d1-1);n2=R(1,d2-1);}while(d1===d2||gcd(n1,d1)!==1||gcd(n2,d2)!==1||n1*d2+n2*d1>=d1*d2);
+    const a=M(frac(n1,d1)),b=M(frac(n2,d2));
+    const C=fresh([
+      ['cup',`${w.n} uses ${a} cup of milk for one recipe and ${b} cup for another. How much milk does ${w.he} use altogether?`],
+      ['hour',`${w.n} reads for ${a} hour before lunch and ${b} hour after dinner. How long does ${w.he} read in total?`],
+      ['km',`${w.n} walks ${a} km to the bakery and then ${b} km to school. How far does ${w.he} walk in all?`],
+      ['L',`A painter uses ${a} L of paint on a door and ${b} L on a window. How much paint does the painter use altogether?`],
+      ['kg',`At the feria, ${w.n} buys ${a} kg of grapes and ${b} kg of cherries. How many kilograms of fruit does ${w.he} buy?`],
+      ['of the pizza',`${w.n} eats ${a} of a pizza and ${w.his} brother eats ${b} of the same pizza. What fraction of the pizza do they eat together?`]
+    ],'fa');
+    const u=C[0].startsWith('of')?'':' '+C[0];
+    const N=n1*d2+n2*d1,Dd=d1*d2;
+    const W=[frOpt(n1+n2,d1+d2,u),frOpt(n1*n2,Dd,u),frOpt(n1+n2,Math.max(d1,d2),u),frOpt(N+1,Dd,u),frOpt(N,Dd*2,u)];
+    return mc(C[1],frOpt(N,Dd,u),W,{t:'fa',n1,d1,n2,d2});
+  },
+  sub(){
+    const w=who(); const Ds=[2,3,4,5,6,8,10,12];
+    let d1,d2,n1,n2; do{d1=pick(Ds);d2=pick(Ds);n1=R(1,d1-1);n2=R(1,d2-1);}while(d1===d2||gcd(n1,d1)!==1||gcd(n2,d2)!==1||n1*d2<=n2*d1);
+    const a=M(frac(n1,d1)),b=M(frac(n2,d2));
+    const C=fresh([
+      ['m',`A ribbon is ${a} m long. ${w.n} cuts off ${b} m. How much ribbon remains?`],
+      ['L',`A bottle has ${a} L of water. ${w.n} drinks ${b} L. How much water is left in the bottle?`],
+      ['hour',`${w.n} has ${a} hour to finish ${w.his} homework. ${w.He} has already worked ${b} hour. How much time is left?`],
+      ['of the cake',`${a} of a cake is left after a birthday party. ${w.n} takes ${b} of the cake home. What fraction of the cake remains?`],
+      ['km',`A trail is ${a} km long. A group has walked ${b} km. How much farther do they have to walk?`],
+      ['kg',`A bag has ${a} kg of flour. A baker uses ${b} kg for bread. How much flour is left?`]
+    ],'fs');
+    const u=C[0].startsWith('of')?'':' '+C[0];
+    const N=n1*d2-n2*d1,Dd=d1*d2;
+    const W=[n1>n2?frOpt(n1-n2,Math.abs(d1-d2)||d1,u):null,frOpt(n1*d2+n2*d1,Dd,u),n1>n2?frOpt(n1-n2,Math.max(d1,d2),u):null,frOpt(N+1,Dd,u),frOpt(N,Dd*2,u)];
+    return mc(C[1],frOpt(N,Dd,u),W,{t:'fs',n1,d1,n2,d2});
+  },
+  toDecimal(){
+    const d=pick([2,4,5,10,20,25]),n=R(1,d-1); if(gcd(n,d)!==1) return null;
+    const C=fresh([['liter','liter','liters'],['kilogram of cheese','kg','kg'],['kilometer','km','km'],['meter of fabric','m','m'],['hour','hour','hours'],['liter of paint','liter','liters']],'fd');
+    const v=n*SC/d, un=x=>' '+(x>=2*SC?C[2]:C[1]);
+    const text=`${M(frac(n,d))} ${C[0]} is the same as:`;
+    const cand=[[`0,${n}${d}`,Number(`0.${n}${d}`)],[`${n},${d}`,Number(`${n}.${d}`)],[dstr(v+SC/5),(v+SC/5)/SC],[dstr(v+SC/10),(v+SC/10)/SC],[dstr(Math.abs(v-SC/10)),Math.abs(v-SC/10)/SC]];
+    const W=cand.filter(([s])=>s!==dstr(v)&&s!=='0').map(([s,x])=>opt('s'+s,s+un(Math.round(x*SC))));
+    return mc(text,opt('s'+dstr(v),dstr(v)+un(v)),W,{t:'fd',n,d});
+  }
+};
+
+/* =====================================================================
+   5. PERCENT
+   ===================================================================== */
+function shadedSet(n,k){return shuffle([...Array(n).keys()]).slice(0,k).sort((a,b)=>a-b);}
+const PCT={
+  diagram(){
+    const w=who();
+    const C=fresh([
+      ['circle',[4,5,8,10,20],(n)=>`A circle is divided into ${n} equal parts. What percent of the circle is shaded?`],
+      ['circle',[4,5,8,10],(n)=>`A pizza is cut into ${n} equal slices. The shaded slices have already been eaten. What percent of the pizza was eaten?`],
+      ['strip',[4,5,10,20],(n)=>`A strip is divided into ${n} equal parts. What percent of the strip is shaded?`],
+      ['strip',[5,10,20],(n)=>`A chocolate bar has ${n} equal pieces. ${w.n} ate the shaded pieces. What percent of the bar did ${w.he} eat?`],
+      ['grid',[100],(n)=>`A patio floor has ${n} equal tiles, and the shaded tiles are blue. What percent of the floor is blue?`],
+      ['grid',[20,25,10],(n)=>`A school garden is divided into ${n} equal plots. Tomatoes are planted in the shaded plots. What percent of the garden has tomatoes?`],
+      ['grid',[20,25],(n)=>`A wall mural has ${n} equal squares. The shaded squares are painted gold. What percent of the mural is gold?`]
+    ],'pd');
+    const n=pick(C[1]),k=n===100?R(8,92):R(1,n-1); const A=100*k/n; if(!Number.isInteger(A*10)) return null;
+    let fig;
+    if(C[0]==='circle') fig={type:'circle',n,s:[...Array(k).keys()]};
+    else if(C[0]==='strip') fig={type:'strip',n,s:shadedSet(n,k)};
+    else { const [r,c]=n===100?[10,10]:n===25?[5,5]:n===20?[4,5]:[2,5]; fig={type:'grid',r,c,s:shadedSet(n,k)}; }
+    const W=[k,100-A,A+10,A-10,A/10,A+5].filter(v=>v>0&&v<100&&v!==A);
+    return mc(C[2](n),opt(A,pct(A)),[...new Set(W)].map(v=>opt(v,pct(v))),{t:'pd',n,k},fig);
+  },
+  score(){
+    const w=who();
+    const C=fresh([
+      (s,t)=>`You scored ${s} out of ${t} on a test. What percent did you score?`,
+      (s,t)=>`In basketball practice, ${w.n} makes ${s} of ${t} free throws. What percent of the free throws does ${w.he} make?`,
+      (s,t)=>`${w.n} planted ${t} seeds in the school garden and ${s} of them sprouted. What percent of the seeds sprouted?`,
+      (s,t)=>`In a survey of ${t} students, ${s} said they walk to school. What percent of the students walk to school?`,
+      (s,t)=>`A goalkeeper faced ${t} penalty kicks and saved ${s}. What percent of the penalty kicks did the goalkeeper save?`,
+      (s,t)=>`${w.n} answered ${s} of the ${t} questions of a math challenge correctly. What percent did ${w.he} answer correctly?`
+    ],'ps');
+    const t=pick([10,20,25,40,50,200,4,5]); let s; do{s=R(1,t-1);}while((100*s)%t!==0);
+    const A=100*s/t;
+    const W=[s,100-A,A-10,A+5,A+10,t-s].filter(v=>v>0&&v<100&&v!==A);
+    return mc(C(s,t),opt(A,pct(A)),[...new Set(W)].map(v=>opt(v,pct(v))),{t:'ps',s,tt:t});
+  },
+  ofNumber(){
+    const p=pick([5,10,15,20,25,30,40,50,60,75]),st=100/gcd(p,100),b=st*R(Math.ceil(20/st),Math.floor(600/st)),A=p*b/100;
+    const text=pick([`What is ${pct(p)} of ${fmt(b)}?`,`Calculate ${pct(p)} of ${fmt(b)}.`,`Find ${pct(p)} of ${fmt(b)}.`]);
+    return mc(text,opt(A,fmt(A)),nums(A,[b-A,A*2,p*b/10,A+p,b/p],fmt,5),{t:'po',p,b});
+  },
+  context(){
+    const C=fresh([
+      [[120,480],[10,20,25,30,40],(p,b)=>`A group of ${fmt(b)} students was asked about their favorite sport. ${pct(p)} chose football. How many students chose football?`,' students'],
+      [[8000,40000],[10,20,25,30,40,50],(p,b)=>`A jacket costs ${money(b)} and has a ${pct(p)} discount. How much money is the discount?`,'$'],
+      [[200,800],[10,20,25,40,60],(p,b)=>`A school has ${fmt(b)} students, and ${pct(p)} of them take the bus. How many students take the bus?`,' students'],
+      [[8000,20000],[25,50,75,80,90],(p,b)=>`A stadium in Antofagasta has ${fmt(b)} seats and is ${pct(p)} full. How many seats are occupied?`,' seats'],
+      [[60,90],[10,20,30,40],(p,b)=>`A class lasts ${b} minutes and ${pct(p)} of the time is used for a warm-up. How many minutes is the warm-up?`,' minutes'],
+      [[400,1200],[15,25,35,45,65],(p,b)=>`A water tank holds ${fmt(b)} liters and is ${pct(p)} full. How many liters of water are in the tank?`,' liters'],
+      [[150,600],[10,20,30,60],(p,b)=>`A book has ${fmt(b)} pages. ${pick(['Sofía','Diego','Camila','Tomás'])} has read ${pct(p)} of it. How many pages has that been?`,' pages']
+    ],'pc');
+    const p=pick(C[1]),st=100/gcd(p,100),lo=Math.ceil(C[0][0]/st),hi=Math.floor(C[0][1]/st);
+    let b=st*R(lo,hi); if(C[3]==='$'||b>=5000) b=Math.round(b/(st*100))*st*100||st*100;
+    const A=p*b/100; if(!Number.isInteger(A)) return null;
+    const f=C[3]==='$'?money:v=>fmt(v)+C[3];
+    return mc(C[2](p,b),opt(A,f(A)),nums(A,[b-A,A*2,p*b/10,Math.round(A/2)],f,C[3]==='$'?500:5),{t:'pc',p,b});
+  },
+  decToPct(){
+    const val=pick([[0.4,'0,4'],[0.35,'0,35'],[0.05,'0,05'],[0.8,'0,8'],[0.75,'0,75'],[0.125,'0,125'],[1.2,'1,2'],[0.06,'0,06'],[0.45,'0,45'],[0.9,'0,9'],[0.65,'0,65'],[0.15,'0,15'],[1.5,'1,5']]);
+    const A=Math.round(val[0]*1000)/10;
+    const C=fresh([
+      s=>`Write ${s} as a percent.`,
+      s=>`In a class, ${s} of the students play an instrument. What percent of the students is that?`,
+      s=>`A phone battery is at ${s} of its full charge. What percent is that?`,
+      s=>`${s} of the water in a reservoir comes from rain. What percent is that?`,
+      s=>`Express the decimal ${s} as a percent.`
+    ],'dt');
+    const W=[A/10,val[0],A*10,A+10].filter(x=>x!==A);
+    return mc(C(val[1]),opt(A,pct(A)),[...new Set(W)].map(x=>opt(x,pct(Math.round(x*1000)/1000))),{t:'dt',x:val[0]});
+  }
+};
+
+/* =====================================================================
+   Registro de temas (el orden es el orden de los botones)
+   ===================================================================== */
 const TOPICS={
-  enteros:{name:'Números enteros',gen(){
-    const op=pick(['+','-','x',':']); let a,b,ans,tex,d;
-    if(op==='+'){a=R(-25,25)||9;b=-R(1,25);ans=a+b;tex=`${N(a)} + ${P(b)}`;d=[a-b,-ans,Math.abs(a)+Math.abs(b)];}
-    else if(op==='-'){a=R(-20,20)||-6;b=R(-20,20)||-4;ans=a-b;tex=`${N(a)} - ${P(b)}`;d=[a+b,b-a,-a-b];}
-    else if(op==='x'){a=R(2,12)*pick([1,-1]);b=R(2,12)*pick([1,-1]);if(a>0&&b>0)a=-a;ans=a*b;tex=`${N(a)} \\cdot ${P(b)}`;d=[-ans,a+b,ans+Math.abs(a)];}
-    else{b=R(2,12)*pick([1,-1]);const q=R(2,12)*pick([1,-1]);a=b*q;ans=q;tex=`${N(a)} : ${P(b)}`;d=[-q,b,q+1,q-1];}
-    return build(`¿Cuánto es ${M(tex)}?`,num(ans),near(ans,d).map(v=>num(v)),{t:'int',op,a,b});
-  }},
-  fracciones:{name:'Fracciones',gen(){
-    const D=[2,3,4,5,6,8,10,12]; let d1=pick(D),d2=pick(D); while(d2===d1)d2=pick(D);
-    let n1=R(1,d1-1),n2=R(1,d2-1); let o=pick(['+','-']);
-    if(o==='-'&&n1*d2<n2*d1){[n1,d1,n2,d2]=[n2,d2,n1,d1];}
-    if(o==='-'&&n1*d2===n2*d1)o='+';
-    const s=o==='+'?1:-1;
-    const F=(n,d)=>{if(!(n>0&&d>0))return null;const g=gcd(n,d);n/=g;d/=g;return {key:n+'/'+d,tex:d===1?N(n):`\\frac{${n}}{${d}}`};};
-    const an=n1*d2+s*n2*d1, ad=d1*d2, g=gcd(an,ad), rn=an/g, rd=ad/g;
-    const ds=[F(n1+s*n2,d1+d2),F(n1+s*n2,Math.max(d1,d2)),F(n1*d2-s*n2*d1,ad),F(rn+1,rd),F(rn,rd*2),F(rn+1,rd+1),F(rn-1,rd),F(rn+2,rd)];
-    return build(`¿Cuánto es ${M(`\\frac{${n1}}{${d1}} ${o} \\frac{${n2}}{${d2}}`)}?`,F(an,ad),ds,{t:'frac',n1,d1,n2,d2,o});
-  }},
-  potencias:{name:'Potencias',gen(){
-    const k=pick(['val','mul','div']);
-    if(k==='val'){
-      const b=pick([2,3,4,5,-2,-3]); const e=b===-2||b===2?R(2,5):Math.abs(b)>=4?R(2,3):R(2,4); const ans=Math.pow(b,e);
-      return build(`¿Cuál es el valor de ${M(`${P(b)}^{${e}}`)}?`,num(ans),near(ans,[b*e,-ans,Math.pow(b,e+1),Math.pow(b,e-1)]).map(v=>num(v)),{t:'pow',b,e});
-    }
-    const b=R(2,9); let m=R(2,7),n=R(2,6); if(k==='div'&&m<=n)m=n+R(1,4);
-    const E=x=>({key:b+'^'+x,tex:`${b}^{${x}}`});
-    if(k==='mul'){const t=m+n;
-      return build(`Simplifica ${M(`${b}^{${m}} \\cdot ${b}^{${n}}`)}`,E(t),[E(m*n),{key:(b*b)+'^'+t,tex:`${b*b}^{${t}}`},E(Math.abs(m-n)||1),E(t+1),E(t-1),E(t+2)],{t:'mul',b,m,n});}
-    const t=m-n;
-    return build(`Simplifica ${M(`${b}^{${m}} : ${b}^{${n}}`)}`,E(t),[E(m+n),{key:'1^'+t,tex:`1^{${t}}`},E(m*n),E(t+1),E(t===1?3:t-1),E(t+2)],{t:'div',b,m,n});
-  }},
-  porcentajes:{name:'Porcentajes',gen(){
-    const p=pick([5,10,15,20,25,30,40,50,60,75]); const step=100/gcd(p,100);
-    const base=step*R(Math.ceil(20/step),Math.floor(1200/step)); const ans=p*base/100;
-    return build(`¿Cuánto es el ${M(`${p}\\%`)} de ${M(N(base))}?`,num(ans),near(ans,[ans*2,base-ans,ans+p,Math.round(base/p),ans*10]).map(v=>v>0?num(v):null),{t:'pct',p,base});
-  }},
-  ecuaciones:{name:'Ecuaciones',gen(){
-    const x=R(-10,10)||3, a=R(2,9), b=R(1,20)*pick([1,-1]), c=a*x+b;
-    const X=v=>Number.isInteger(v)?{key:String(v),tex:`x = ${N(v)}`}:null;
-    return build(`Resuelve ${M(`${a}x ${b<0?'-':'+'} ${Math.abs(b)} = ${N(c)}`)}`,X(x),[(c+b)/a,c-b,-x,x+1,x-1,x+2,x-2,c/a,x+3].map(X),{t:'eq',a,b,c});
-  }},
-  area:{name:'Área y perímetro',gen(){
-    const k=pick(['ra','rp','ta']);
-    const U=(v,sq)=>Number.isInteger(v)&&v>0?{key:String(v),tex:`${N(v)}\\text{ cm}${sq?'^2':''}`}:null;
-    if(k!=='ta'){
-      const l=R(4,20),w=R(3,l-1),A=l*w,Pm=2*(l+w);
-      const txt=`Un rectángulo mide ${M(`${l}\\text{ cm}`)} de largo y ${M(`${w}\\text{ cm}`)} de ancho. ¿Cuál es su ${k==='ra'?'área':'perímetro'}?`;
-      if(k==='ra') return build(txt,U(A,1),[U(Pm,1),U(l+w,1),U(A+l,1),U(A-w,1),U(2*A,1),U(A+w,1)],{t:'ra',l,w});
-      return build(txt,U(Pm),[U(A),U(l+w),U(Pm+2),U(Pm-2),U(2*l+w),U(Pm+4)],{t:'rp',l,w});
-    }
-    const b=R(2,12)*2,h=R(3,15),A=b*h/2;
-    return build(`Un triángulo tiene base ${M(`${b}\\text{ cm}`)} y altura ${M(`${h}\\text{ cm}`)}. ¿Cuál es su área?`,U(A,1),[U(b*h,1),U(b+h,1),U(A+b,1),U(A-h,1),U(A+h,1),U(A+1,1)],{t:'ta',b,h});
-  }}
+  numbers:{name:'Numbers',subs:Object.values(NUM)},
+  ratio:{name:'Ratio and Proportion',subs:Object.values(RAT)},
+  decimals:{name:'Decimals',subs:Object.values(DEC)},
+  fractions:{name:'Fractions',subs:Object.values(FRA)},
+  percent:{name:'Percent',subs:Object.values(PCT)}
 };
 function makeQuiz(topic,count){
-  const keys=Object.keys(TOPICS); const out=[]; const seen=new Set(); let guard=0;
-  while(out.length<count&&guard++<2000){
-    const q=TOPICS[topic==='mixto'?keys[out.length%keys.length]:topic].gen();
-    if(q&&!seen.has(q.text)){seen.add(q.text);out.push(q);}
+  USED.clear();
+  const keys=Object.keys(TOPICS); if(!keys.length) return [];
+  const plan=[];
+  if(topic==='mixto'){ const ord=shuffle([...keys]); for(let i=0;i<count;i++) plan.push(ord[i%ord.length]); }
+  else if(TOPICS[topic]){ for(let i=0;i<count;i++) plan.push(topic); }
+  else return [];
+  const cyc={},out=[],seen=new Set();
+  for(const t of plan){
+    const subs=TOPICS[t].subs; if(!cyc[t]) cyc[t]={ord:shuffle(subs.map((_,i)=>i)),i:0};
+    const c=cyc[t]; let q=null,tries=0;
+    while(!q&&tries++<80){ q=subs[c.ord[c.i%c.ord.length]](); if(q&&seen.has(q.text)) q=null; }
+    c.i++; if(q){ seen.add(q.text); out.push(q); }
   }
   return topic==='mixto'?shuffle(out):out;
+}
+
+/* Figuras (se dibujan en cada pantalla a partir de números, nunca de HTML guardado) */
+function renderFig(f){
+  if(!f||typeof f!=='object') return '';
+  const I=(v,lo,hi)=>Number.isInteger(v)&&v>=lo&&v<=hi;
+  const S=new Set(Array.isArray(f.s)?f.s.filter(x=>Number.isInteger(x)):[]);
+  const fill=i=>S.has(i)?'#1F8A7A':'#FFFFFF';
+  const st='stroke="#1B2A4A" stroke-width="2" stroke-linejoin="round"';
+  if(f.type==='circle'&&I(f.n,2,30)){
+    let p='';for(let i=0;i<f.n;i++){const a0=-Math.PI/2+2*Math.PI*i/f.n,a1=-Math.PI/2+2*Math.PI*(i+1)/f.n;
+      const x0=(100+90*Math.cos(a0)).toFixed(2),y0=(100+90*Math.sin(a0)).toFixed(2),x1=(100+90*Math.cos(a1)).toFixed(2),y1=(100+90*Math.sin(a1)).toFixed(2);
+      p+=`<path d="M100 100 L${x0} ${y0} A90 90 0 ${f.n===1?1:0} 1 ${x1} ${y1} Z" fill="${fill(i)}" ${st}/>`;}
+    return `<svg class="fig" viewBox="0 0 200 200" role="img" aria-label="Círculo dividido en ${f.n} partes, ${S.size} sombreadas">${p}</svg>`;
+  }
+  if(f.type==='strip'&&I(f.n,2,30)){
+    const W=600,cw=W/f.n;let p='';for(let i=0;i<f.n;i++)p+=`<rect x="${(2+i*cw).toFixed(2)}" y="2" width="${cw.toFixed(2)}" height="70" fill="${fill(i)}" ${st}/>`;
+    return `<svg class="fig strip" viewBox="0 0 604 74" role="img" aria-label="Tira dividida en ${f.n} partes, ${S.size} sombreadas">${p}</svg>`;
+  }
+  if(f.type==='grid'&&I(f.r,1,10)&&I(f.c,1,10)){
+    const cs=24;let p='';for(let i=0;i<f.r*f.c;i++){const x=2+(i%f.c)*cs,y=2+Math.floor(i/f.c)*cs;p+=`<rect x="${x}" y="${y}" width="${cs}" height="${cs}" fill="${fill(i)}" ${st}/>`;}
+    return `<svg class="fig" viewBox="0 0 ${f.c*cs+4} ${f.r*cs+4}" role="img" aria-label="Cuadrícula de ${f.r*f.c} partes, ${S.size} sombreadas">${p}</svg>`;
+  }
+  return '';
 }
 /*GEN-END*/
 
@@ -412,12 +814,15 @@ function parseCustom(txt){
    ===================================================================== */
 const SFX=(()=>{
   const KEY='retodelta.sound';
+  const VOL=2.2;   // volumen general: súbelo o bájalo aquí (antes era 0.55)
   let ctx=null, master=null, noise=null, loop=null;
   let on=true; try{ const v=localStorage.getItem(KEY); if(v!==null) on=v==='1'; }catch(e){}
   function unlock(){
     if(!ctx){
       const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
-      ctx=new AC(); master=ctx.createGain(); master.gain.value=on?0.55:0; master.connect(ctx.destination);
+      ctx=new AC(); master=ctx.createGain(); master.gain.value=on?VOL:0;
+      const comp=ctx.createDynamicsCompressor(); comp.threshold.value=-12; comp.knee.value=6; comp.ratio.value=4; comp.attack.value=0.003; comp.release.value=0.15;
+      master.connect(comp); comp.connect(ctx.destination);
       noise=ctx.createBuffer(1,ctx.sampleRate*0.2,ctx.sampleRate);
       const d=noise.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
     }
@@ -469,7 +874,7 @@ const SFX=(()=>{
     },60);
   }
   function stopMusic(){ clearInterval(loop); loop=null; }
-  function toggle(){ on=!on; try{localStorage.setItem(KEY,on?'1':'0');}catch(e){} unlock(); if(master) master.gain.setTargetAtTime(on?0.55:0,ctx.currentTime,0.03); paintBtn(); }
+  function toggle(){ on=!on; try{localStorage.setItem(KEY,on?'1':'0');}catch(e){} unlock(); if(master) master.gain.setTargetAtTime(on?VOL:0,ctx.currentTime,0.03); paintBtn(); }
   function paintBtn(){ const b=document.getElementById('snd'); if(!b) return;
     b.innerHTML=on?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
                   :'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -484,12 +889,13 @@ document.addEventListener('pointerdown',()=>SFX.unlock(),{once:true});
 const H={game:null,quiz:[],limit:20,players:new Map(),answers:[],stats:[],q:-1,phase:'setup',tick:null,start:0,unsub:[]};
 
 function hostSetup(){
-  const chips=[...Object.entries(TOPICS).map(([k,t])=>[k,t.name]),['mixto','Mixto'],['custom','Mis preguntas']]
+  const tk=Object.keys(TOPICS);
+  const chips=[...tk.map(k=>[k,TOPICS[k].name]),...(tk.length>1?[['mixto','Mixto']]:[]),['custom','Mis preguntas']]
     .map(([k,n],i)=>`<label class="chip"><input type="radio" name="topic" value="${k}" ${i===0?'checked':''}><span>${n}</span></label>`).join('');
   view(`
   <main class="setup">
     <div class="left">
-      <div class="word disp"><span class="mark">${DELTA}Reto Delta</span><small>Matemática</small></div>
+      <div class="word disp"><span class="mark">${DELTA}Reto Delta</span><small>Matemática</small><span class="by">${esc(TEACHER)}</span></div>
       <p class="lede">Proyecta la pregunta, tus estudiantes responden desde su celular con un código, y el puntaje se calcula solo: más rápido y correcto, más puntos.</p>
       ${LOCAL?`<p class="mode">Modo de prueba: todavía no está conectado a Supabase. Para probar, abre este mismo archivo en otra pestaña del navegador y únete como estudiante.</p>`:''}
     </div>
@@ -514,12 +920,15 @@ function hostSetup(){
   document.querySelectorAll('input[name=topic]').forEach(r=>r.addEventListener('change',()=>{
     const c=r.value==='custom'&&r.checked; $('#customBox').classList.toggle('hidden',!c); $('#countBox').classList.toggle('hidden',c);
   }));
+  try{ const saved=localStorage.getItem('retodelta.custom'); if(saved) $('#custom').value=saved; }catch(e){}
+  { const c=document.querySelector('input[name=topic]:checked').value==='custom'; $('#customBox').classList.toggle('hidden',!c); $('#countBox').classList.toggle('hidden',c); }
   $('#create').onclick=hostCreate;
 }
 
 async function hostCreate(){
   const topic=document.querySelector('input[name=topic]:checked').value;
   const count=+$('#count').value; H.limit=+$('#limit').value;
+  if(topic==='custom'){ try{localStorage.setItem('retodelta.custom',$('#custom').value);}catch(e){} }
   const quiz=topic==='custom'?parseCustom($('#custom').value):makeQuiz(topic,count);
   if(!quiz.length){ $('#err').textContent='Escribe al menos una pregunta con el formato: pregunta | correcta | incorrecta.'; return; }
   SFX.unlock(); $('#create').disabled=true; $('#err').textContent='';
@@ -559,7 +968,7 @@ function joinURL(){ return location.origin+location.pathname; }
 function hostLobby(){
   const url=joinURL();
   view(`
-  <header class="hbar"><span class="mark">${DELTA}Reto Delta</span><span class="meta">${esc(H.game.title)} · ${H.quiz.length} preguntas · ${H.limit} s</span></header>
+  <header class="hbar"><span class="mark">${DELTA}<span class="bt">Reto Delta<small>${esc(TEACHER)}</small></span></span><span class="meta">${esc(H.game.title)} · ${H.quiz.length} preguntas · ${H.limit} s</span></header>
   <main class="lobby">
     <section class="joinbox">
       <span class="lbl">Entra a</span>
@@ -602,11 +1011,11 @@ function tilesHTML(q,cls){
 async function hostQuestion(i){
   H.q=i; H.phase='question'; const q=H.quiz[i];
   view(`
-  <header class="hbar"><span class="mark">${DELTA}Reto Delta</span><span class="meta">Pregunta ${i+1} de ${H.quiz.length}</span>
+  <header class="hbar"><span class="mark">${DELTA}<span class="bt">Reto Delta<small>${esc(TEACHER)}</small></span></span><span class="meta">Pregunta ${i+1} de ${H.quiz.length}</span>
     <div class="answered"><b id="ans">0</b><span id="ansl">de ${H.players.size} respondieron</span></div></header>
   <main class="hq">
     <div class="stage">
-      <div class="qtext">${esc(q.text)}</div>
+      <div class="qtext">${esc(q.text)}${q.fig?`<div class="qfig">${renderFig(q.fig)}</div>`:''}</div>
       <div class="timer" id="timer" role="timer"><svg viewBox="0 0 120 108"><path class="bg" d="M60 6 L114 100 H6 Z"/><path class="fg" id="tfg" pathLength="100" d="M60 6 L114 100 H6 Z"/></svg><span id="tnum">${H.limit}</span></div>
     </div>
     <div class="htiles" id="tiles">${tilesHTML(q,'htile')}</div>
@@ -615,7 +1024,7 @@ async function hostQuestion(i){
   $('#skip').onclick=hostReveal;
   try{
     await db.update('games',H.game.id,{status:'question',q_index:i,reveal:null,
-      current:{index:i,text:q.text,choices:q.choices,limit:H.limit}});
+      current:{index:i,text:q.text,choices:q.choices,limit:H.limit,fig:q.fig||null}});
   }catch(e){ console.error(e); }
   H.start=performance.now(); clearInterval(H.tick); SFX.music('question'); let lastSec=H.limit;
   H.tick=setInterval(()=>{
@@ -668,7 +1077,7 @@ async function hostBoard(){
   H.phase='board'; const top=sorted().slice(0,5); const last=H.q>=H.quiz.length-1;
   try{ await db.update('games',H.game.id,{status:'leaderboard',board:top.map(p=>({nickname:p.nickname,score:p.score}))}); }catch(e){}
   view(`
-  <header class="hbar"><span class="mark">${DELTA}Reto Delta</span><span class="meta">Después de la pregunta ${H.q+1} de ${H.quiz.length}</span></header>
+  <header class="hbar"><span class="mark">${DELTA}<span class="bt">Reto Delta<small>${esc(TEACHER)}</small></span></span><span class="meta">Después de la pregunta ${H.q+1} de ${H.quiz.length}</span></header>
   <main class="board">
     <h2>Posiciones</h2>
     <ol class="ranks">${top.map(p=>`<li><span class="pos">${p.rank}</span><span class="nm">${esc(p.nickname)}</span><span class="gain">${p.last_points?'+'+fmtPts(p.last_points):''}</span><span class="pts">${fmtPts(p.score)}</span></li>`).join('')||'<li><span class="nm">Sin jugadores</span></li>'}</ol>
@@ -685,7 +1094,7 @@ async function hostEnd(){
   const hard=H.stats.map((s,i)=>({i,pct:s.answered?Math.round(100*s.correct/Math.max(H.players.size,1)):0,asked:i<=H.q}))
     .filter(x=>x.asked).sort((a,b)=>a.pct-b.pct).slice(0,3);
   view(`
-  <header class="hbar"><span class="mark">${DELTA}Reto Delta</span><span class="meta">${esc(H.game.title)} · código ${H.game.code}</span></header>
+  <header class="hbar"><span class="mark">${DELTA}<span class="bt">Reto Delta<small>${esc(TEACHER)}</small></span></span><span class="meta">${esc(H.game.title)} · código ${H.game.code}</span></header>
   <main class="board">
     <h2>Podio</h2>
     <div class="podium">${pod}</div>
@@ -722,7 +1131,7 @@ function playerJoin(prefill=''){
   <main class="join">
     <svg class="bgdelta" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 4 L96 92 H4 Z"/><path d="M50 22 L81 82 H19 Z"/><path d="M50 40 L66 72 H34 Z"/></svg>
     <form class="join-card" id="jf" novalidate>
-      <div class="word disp"><span class="mark">${DELTA}Reto Delta</span><small>Matemática</small></div>
+      <div class="word disp"><span class="mark">${DELTA}Reto Delta</span><small>Matemática</small><span class="by">${esc(TEACHER)}</span></div>
       <div class="field"><label for="code">Código del juego</label>
         <input id="code" class="code-in" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="000000" value="${esc(prefill)}"></div>
       <div class="field"><label for="nick">Tu nombre</label>
@@ -791,7 +1200,7 @@ function questionView(cur){
   <main class="pq">
     <div class="pq-top"><span>Pregunta ${cur.index+1} · ${esc(S.player.nickname)}</span><span id="pt">${cur.limit} s</span></div>
     <div class="pbar"><i id="pb"></i></div>
-    <div class="pq-text">${esc(cur.text)}</div>
+    <div class="pq-text">${esc(cur.text)}${cur.fig?`<div class="qfig">${renderFig(cur.fig)}</div>`:''}</div>
     <div class="ptiles">${cur.choices.map((c,i)=>`<button class="ptile c${i}" data-i="${i}"><span class="shp" aria-label="${SHAPE_NAMES[i]}">${SHAPES[i]}</span><span>${esc(c)}</span></button>`).join('')}</div>
   </main>`);
   document.querySelectorAll('.ptile').forEach(b=>b.onclick=()=>answer(cur,+b.dataset.i));
